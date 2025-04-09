@@ -50,32 +50,22 @@ You workload must make this available to you either by webserver/API or dump it 
 cat /var/hyperprotect/se-checksums.txt
 ```
 
-You can view the full script here [link to script]
+You can view the full script here [vault-script.sh](HPVS-AttestationSignature-files/vault-script.sh)
 
-
-Following up on some work that has already been done on this on **How to run IBM Vault in a Confidential Computing enclave**
-
-We're deploying Hashicorp Vault though the following script:
+### Encrypting the Contract and Calculating Attestation Checksums
+The attestation checksum data is basically the sha256sum of the contract elements. So for the workload checksum is the sha256sum of `hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_WORKLOAD}` without any end of line characters:
 ```
-#!/bin/sh
-
-# Attestation
-cat /var/hyperprotect/se-checksums.txt
-
-# PKCS11 files
-echo $grep11 | base64 -d > /etc/ep11client/grep11client.yaml
-echo $ca | base64 -d > /etc/ep11client/certs/grep11-ca.pem
-echo $client | base64 -d > /etc/ep11client/certs/grep11-client.pem
-echo $key | base64 -d > /etc/ep11client/certs/grep11-client.key
-
-# Vault files
-echo $conf | base64 -d > /vault/vault-conf.hcl
-echo $license | base64 -d > /vault/license.hclic
-/vault/vault server -config=/vault/vault-conf.hcl
+echo "hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_WORKLOAD}" | tr -d "\n\r" | sha256sum
 ```
-The operative line here is `cat /var/hyperprotect/se-checksums.txt`
+I chose to use the contract encryption script, which can be viewed here [`encrypt_contract.sh`](HPVS-AttestationSignature-files/encrypt_contract.sh), to automatically output the checksums to a file so these values could be compared to the actual data which is made available by the system.
 
-Which yields the following results in the logs:
+The resulting local `se-checksums.txt` matched the logs:
+```
+680e49fa9deae730d16eb0ba067ec2a66b18540ffc735665e54535450a9e5fc8  - contract:workload
+ef192311e1c19512774498ef5d6c1afd0709da7d4675de65e67d87014c57616f  - contract:env
+```
+### Results in logs:
+When the workload comes up we see the following:
 ```
 Mar 24 10:52:29 zrhpkoso zcatvault-zcatvault[854262]: 24.11.0
 Mar 24 10:52:29 zrhpkoso zcatvault-zcatvault[854262]: Machine Type/Plant/Serial: 3931/02/8A3B8
@@ -89,75 +79,10 @@ Mar 24 10:52:29 zrhpkoso zcatvault-zcatvault[854262]: 13891bfb004315f8fd84d1b3d0
 Mar 24 10:52:29 zrhpkoso zcatvault-zcatvault[854262]: 680e49fa9deae730d16eb0ba067ec2a66b18540ffc735665e54535450a9e5fc8 contract:workload 
 Mar 24 10:52:29 zrhpkoso zcatvault-zcatvault[854262]: ef192311e1c19512774498ef5d6c1afd0709da7d4675de65e67d87014c57616f contract:env 
 ```
-I've also make changes to my `encrypt_contract.sh` script to produce these checksums at the time of contract encryption:
-```
-#!/bin/bash
+The attestation matches and we now know the contract on the system is what we encrypted... 
 
-CONTRACT_KEY="/data/hpcr/config/certs/ibm-hyper-protect-container-runtime-24.11.0-encrypt.crt"
-WORKLOAD="./workload.yml"
-PASSWORD="$(openssl rand 32 | base64 -w0)"
-ENCRYPTED_PASSWORD="$(echo -n "$PASSWORD" | base64 -d | openssl rsautl -encrypt -inkey $CONTRACT_KEY -certin | base64 -w0 )"
-ENCRYPTED_WORKLOAD="$(echo -n "$PASSWORD" | base64 -d | openssl enc -aes-256-cbc -pbkdf2 -pass stdin -in "$WORKLOAD" | base64 -w0)"
-echo "workload: \"hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_WORKLOAD}\"" > user-data
-# For attestation of the workload section 
-echo "`echo "hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_WORKLOAD}" | tr -d "\n\r" | sha256sum` contract:workload" > se-checksums.txt
-
-
-#ENV="./env.yml"
-ENV="./env-syslog.yml"
-#ENV="./env-logdna-tor.yml"
-PASSWORD="$(openssl rand 32 | base64 -w0)"
-ENCRYPTED_PASSWORD="$(echo -n "$PASSWORD" | base64 -d | openssl rsautl -encrypt -inkey $CONTRACT_KEY  -certin | base64 -w0)"
-ENCRYPTED_ENV="$(echo -n "$PASSWORD" | base64 -d | openssl enc -aes-256-cbc -pbkdf2 -pass stdin -in "$ENV" | base64 -w0)"
-echo "env: \"hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_ENV}\"" >> user-data
-# For attestation of the env section
-echo "`echo "hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_ENV}" | tr -d "\n\r" | sha256sum` contract:env" >> se-checksums.txt
-```
-Remembering that we SHOULD have separation of duties here where the workload owner encrypts the workload section and the admin encrypts the environment section.
-
-The resulting local `se-checksums.txt` matched the logs:
-```
-680e49fa9deae730d16eb0ba067ec2a66b18540ffc735665e54535450a9e5fc8  - contract:workload
-ef192311e1c19512774498ef5d6c1afd0709da7d4675de65e67d87014c57616f  - contract:env
-```
-We will now encrypt the attestation record, but for that a change needs to be made to the script that contains:
-```
-# Attestation
-cat /var/hyperprotect/se-checksums.txt
-```
-To make it easier to identify it in the logs:
-```
-# Attestation
-echo "***BEGIN se-checksums.txt DUMP***"
-cat /var/hyperprotect/se-checksums.txt
-echo "***END se-checksums.txt DUMP***"
-```
-
-Image has been built - `us.icr.io/zcat-hashicorp/vault-ent-hsm@sha256:038fa61a546185f5dc661b7e28b4bd870da97291129cf6f85e5de01a6424fb85`
-
-New checksums:
-```
-278b387a882bf3e946d586c7cb5c3c116625dfabe957e16d937978ca4aad26e2  - contract:workload
-8f030d9daa03b18ee08e9beb4a2634dd7ed55a9432251ca9f5d381703c31d080  - contract:env
-```
-Log output:
-```
-Mar 25 05:29:38 zrhpkoso zcatvault-zcatvault[854262]: ***BEGIN se-checksums.txt DUMP***
-Mar 25 05:29:38 zrhpkoso zcatvault-zcatvault[854262]: 24.11.0
-Mar 25 05:29:38 zrhpkoso zcatvault-zcatvault[854262]: Machine Type/Plant/Serial: 3931/02/8A3B8
-Mar 25 05:29:38 zrhpkoso zcatvault-zcatvault[854262]: Image age: 124 days since creation.
-Mar 25 05:29:38 zrhpkoso zcatvault-zcatvault[854262]: ad65a3820d4a233c84e6d201ce537b8020435ccefe26682809da5ef9b176b8ae root.tar.gz
-Mar 25 05:29:38 zrhpkoso zcatvault-zcatvault[854262]: 080f817231fe4bc40021d24e20af9f1135a36711047212f9374664b86ab406ac baseimage
-Mar 25 05:29:38 zrhpkoso zcatvault-zcatvault[854262]: 89cb82bc8590a9a30b1204187cd7d413f14b1ba4255acaf1bae7dc23f01e0986 /dev/disk/by-label/cidata
-Mar 25 05:29:38 zrhpkoso zcatvault-zcatvault[854262]: c7337f60d493b4b146c27ad1213b4b6fd35bb88c9905869002b47fbae16f4e52 cidata/meta-data
-Mar 25 05:29:38 zrhpkoso zcatvault-zcatvault[854262]: e3d140b492af2cd7399cc04229448235235e70f4db834fd77109b4a7118fe049 cidata/user-data
-Mar 25 05:29:38 zrhpkoso zcatvault-zcatvault[854262]: 13891bfb004315f8fd84d1b3d06833fe251f7749010e1c14833522bd57a950c4 cidata/vendor-data
-Mar 25 05:29:38 zrhpkoso zcatvault-zcatvault[854262]: 278b387a882bf3e946d586c7cb5c3c116625dfabe957e16d937978ca4aad26e2 contract:workload 
-Mar 25 05:29:38 zrhpkoso zcatvault-zcatvault[854262]: 8f030d9daa03b18ee08e9beb4a2634dd7ed55a9432251ca9f5d381703c31d080 contract:env 
-Mar 25 05:29:38 zrhpkoso zcatvault-zcatvault[854262]: ***END se-checksums.txt DUMP***
-```
-
-Encrypting/Decrypting Attestation Records:
+### Encrypting the Attestation Records
+However as discussed above the open records can be 'faked' so we'll now assume the role of the auditor and encrypt the attestation record. Note that since we're using encrypted records we need to change the workload script to output the `se-checksums.txt.enc` to the logs. To make it easier to identify I've also included the tag `***BEGIN se-checksums.txt.enc CAT DUMP***` to be outputed just before the encrypted output and a corresponding one after.
 
 1. Creating RSA key pair:
 ```
@@ -169,122 +94,22 @@ e is 65537 (0x010001)
 [root@zrhpgp11 vault-tutorial-onprem]# openssl rsa -in private_attestation.pem -passin pass:zcatattestation -pubout -out public_attestation.pem
 writing RSA key
 ```
-2. Encrypting and putting into contract:
-```
-#!/bin/bash
-
-CONTRACT_KEY="/data/hpcr/config/certs/ibm-hyper-protect-container-runtime-24.11.0-encrypt.crt"
-WORKLOAD="./workload.yml"
-PASSWORD="$(openssl rand 32 | base64 -w0)"
-ENCRYPTED_PASSWORD="$(echo -n "$PASSWORD" | base64 -d | openssl rsautl -encrypt -inkey $CONTRACT_KEY -certin | base64 -w0 )"
-ENCRYPTED_WORKLOAD="$(echo -n "$PASSWORD" | base64 -d | openssl enc -aes-256-cbc -pbkdf2 -pass stdin -in "$WORKLOAD" | base64 -w0)"
-echo "workload: \"hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_WORKLOAD}\"" > user-data
-# For attestation of the workload section 
-echo "`echo "hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_WORKLOAD}" | tr -d "\n\r" | sha256sum` contract:workload" > se-checksums.txt
-
-
-#ENV="./env.yml"
-ENV="./env-syslog.yml"
-#ENV="./env-logdna-tor.yml"
-PASSWORD="$(openssl rand 32 | base64 -w0)"
-ENCRYPTED_PASSWORD="$(echo -n "$PASSWORD" | base64 -d | openssl rsautl -encrypt -inkey $CONTRACT_KEY  -certin | base64 -w0)"
-ENCRYPTED_ENV="$(echo -n "$PASSWORD" | base64 -d | openssl enc -aes-256-cbc -pbkdf2 -pass stdin -in "$ENV" | base64 -w0)"
-echo "env: \"hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_ENV}\"" >> user-data
-# For attestation of the env section
-echo "`echo "hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_ENV}" | tr -d "\n\r" | sha256sum` contract:env" >> se-checksums.txt
-
-
-ATTESTATION="./public_attestation.pem"
-PASSWORD="$(openssl rand 32 | base64 -w0)"
-ENCRYPTED_PASSWORD="$(echo -n "$PASSWORD" | base64 -d | openssl rsautl -encrypt -inkey $CONTRACT_KEY  -certin | base64 -w0)"
-ENCRYPTED_ATTESTATION="$(echo -n "$PASSWORD" | base64 -d | openssl enc -aes-256-cbc -pbkdf2 -pass stdin -in "$ATTESTATION" | base64 -w0)"
-echo "attestationPublicKey: \"hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_ATTESTATION}\"" >> user-data
-# For attestation of the Attestation section
-echo "`echo "hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_ATTESTATION}" | tr -d "\n\r" | sha256sum` contract:attestationPublicKey" >> se-checksums.txt
-```
-However, we now need to look at `se-checksums.txt.enc`, therefore changing the DUMP part of the script to:
-```
-# Attestation
-echo "***BEGIN se-checksums.txt.enc CAT DUMP***"
-cat /var/hyperprotect/se-checksums.txt.enc
-echo "***END se-checksums.txt.enc CAT DUMP***"
-echo "***BEGIN se-checksums.txt.enc BASE64 DUMP***"
-base64 -iw0 /var/hyperprotect/se-checksums.txt.enc
-echo "***END se-checksums.txt.enc BASE64 DUMP***"
-```
-New image - us.icr.io/zcat-hashicorp/vault-ent-hsm@sha256:98b687a88144fad7c9bd1d2a7bb6ab83358123759f6f5827d2ece5050fb6aeb0
-
-New checksums:
-```
-[root@zrhpgp11 vault-tutorial-onprem]# cat se-checksums.txt 
+2. Modify `encrypt_contract.sh` to [`encrypt_contract_att.sh`](HPVS-AttestationSignature-files/encrypt_contract_att.sh) (click to view) to include the attestation key in the contract, this now results in the followig `se-checksums.txt`:
+``` 
 8b58c2a43d62f44b4362a88a37729bf8fbe32f890b8bad84113f98cd01c2861d  - contract:workload
 dca72747c131d42f308c591c367a72b9613aa9d7f6988d04cb9f2bf661fe67e7  - contract:env
 f49b94c7fd898b74e2efda21b06cd8054926ebfe24a4f714b5fc1ef9b6136c74  - contract:attestationPublicKey
 ```
-Logging output:
+
+### Results in the logs for :
 ```
 Mar 25 05:56:45 zrhpkoso zcatvault-zcatvault[854262]: ***BEGIN se-checksums.txt.enc CAT DUMP***
 Mar 25 05:56:45 zrhpkoso zcatvault-zcatvault[854262]: hyper-protect-basic.MJ2RWnFy5RG0n11fsu1OFAEaremxbTrLhLdoJ17ZWUDfQ9/QWW6okcnsPmw4bxXfCZ+FZgqo78DcdnWaktRMeGv22qd6SNS+e7ixeO0kjwN6gIULe+fFIx8D+qrUpgzH3yhARQc7hCr4K76Zn+HgmkGJNpC8verIEYPxgdwFmI6ZD7pDin6+I+RbM8Ref/DCcTuTK+RSpI5W6azHqxA5j8nmNOzBal1Qyd2VIWeAm7GZGR4IOk48h+HMhiTDqxhMZe+JK99AJDpK91y4J25sEvunlmAgeSby2OnMx6dh3o35beoNmaV4btbVZ7f3Mb266TsTn0bF3Vi6xXthYhzXkB0L2r6Edwpdf6C578+uo6UfKzOlNLL+3icq3RVC3aEbD0gTAHtEbu/6DwHfcb3Fw9C4xdKuDKD5ovRmjSiKuJaF7i1Zq2uYdtps/vNEldSvtse1gHAPD2H9t9QkfUgzKKbJli3rlZ3aMiOhDZq3nJN6HpmZ5t2uTUkvZLFNMN+2NeQkBhu4sV05Hto63GwOv0mHCWQ81ssfBXQqf9PUbDmR4ZI0924oq0P0pznpTJzDmV69MWTfDYNPnQRDNlSkf7FffjjXGL1b3UaFFHb0/Qj7JiYqzcUDV1Lkhtt73A2H1Y5mBBQ04YqQw+fgjGfL+qR58HKdxYtRoZJahDLtcZY=.U2FsdGVkX1/oNKFSJ0VTPXyjHcCs+Y4be2QM6pjmYqSo66yegA6SLpp2cYa3kkBa7rreEanBDnT13M7zsUnkvHW8bEo4oCA8Rkyvgf2UZx1BXPNbrXhLRRjoPjhOYk/+DV3Y0KeAaJ3fdTpJdB7s1gez2lzC/+hOt8gzNllSISYUIV6Ug7wG5kXyygLxIJAXKaDTT47z24+rmI+PrA7xFkVKv5GNiq4fQU6IIGdK0d8Kf9egS7xIm4wrh7N/I73q40J9CMvX2GwcDY7n66kOzM6f+4SoGwsxhVZ6d4autYLs+J5W+VG8wfEVra+shFc73LDRhuLbxQBX5nlHTgd6RmTeQVLtnearWtcUi/G2vRo1uIyyQU4ys0CaBEZ3msZS1a1IJ3x233/LlVZ39Dn0xotse0J1KNKRwBEKE1idRi8imahPCv8Y8gAzj1sXsl1LvzwQ3f0odLwvmY6+t5NAiUv3/+ztB4fK8ah7i/AoF1coqpEwZU04OUIwvhTXuASjnH3rEl6U1QuuSgdrU4hQ5qhNg5pGO2EMQjr3x0TndAvzrzKR8nROBvGoVdMXeaAdmXvepl/cjDNv9AOr2UNI9ZOAbAQ/h5TpXxDVWyAT1jMvQ1hlfgRoJF7RLxvfmCIAanLuIq3EWxCUpbqNEm7KhkdZoXIDOopFPLBiXYZVk5ZWq1Z3/5lf6bN3wG3qxA+2ibsT4ET0cpf4yKEwUm32cglIzu135AY2lgbq4mb0YPLQYQFQBq95oMiOTW0WecGHzzxlZiJ9FsVEHWnuoi6aDtLgljsBel87h3F+afCQwt4onRZxYZWJ7wlELAP6sJFVWyb7/wfT52gApKuAizKh62DsZzcIe/iNVZgdvN0btrJzL1rYRgasUSZx3pc+F+n5Ci168ChRwvRGOil3AgFSduBz64KXmmqvQlpp6dYaJItvU+ip/Qcs6f2KyCptdEU+llOz1BBkvmUY5mQcjVqXodMBgy52c/QEJDF1prn/7zcc6u8/vYbhlf7mOXICLl4KmfTjx/VtNfieVEX52EBB6OLIHsga7pC7Lvd+tqTs5GVOKWGv5NPZU05181p1hl0rRJxt36LMi9ns22x1uyPwALb0rCeuh2JZrx0ANI20VXEDzmvGpLj9QGwgkfZ7VGg7***END se-checksums.txt.enc CAT DUMP***
-Mar 25 05:56:45 zrhpkoso zcatvault-zcatvault[854262]: ***BEGIN se-checksums.txt.enc BASE64 DUMP***
-Mar 25 05:56:45 zrhpkoso zcatvault-zcatvault[854262]: aHlwZXItcHJvdGVjdC1iYXNpYy5NSjJSV25GeTVSRzBuMTFmc3UxT0ZBRWFyZW14YlRyTGhMZG9KMTdaV1VEZlE5L1FXVzZva2Nuc1BtdzRieFhmQ1orRlpncW83OERjZG5XYWt0Uk1lR3YyMnFkNlNOUytlN2l4ZU8wa2p3TjZnSVVMZStmRkl4OEQrcXJVcGd6SDN5aEFSUWM3aENyNEs3NlpuK0hnbWtHSk5wQzh2ZXJJRVlQeGdkd0ZtSTZaRDdwRGluNitJK1JiTThSZWYvRENjVHVUSytSU3BJNVc2YXpIcXhBNWo4bm1OT3pCYWwxUXlkMlZJV2VBbTdHWkdSNElPazQ4aCtITWhpVERxeGhNWmUrSks5OUFKRHBLOTF5NEoyNXNFdnVubG1BZ2VTYnkyT25NeDZkaDNvMzViZW9ObWFWNGJ0YlZaN2YzTWIyNjZUc1RuMGJGM1ZpNnhYdGhZaHpYa0IwTDJyNkVkd3BkZjZDNTc4K3VvNlVmS3pPbE5MTCszaWNxM1JWQzNhRWJEMGdUQUh0RWJ1LzZEd0hmY2IzRnc5QzR4ZEt1REtENW92Um1qU2lLdUphRjdpMVpxMnVZZHRwcy92TkVsZFN2dHNlMWdIQVBEMkg5dDlRa2ZVZ3pLS2JKbGkzcmxaM2FNaU9oRFpxM25KTjZIcG1aNXQydVRVa3ZaTEZOTU4rMk5lUWtCaHU0c1YwNUh0bzYzR3dPdjBtSENXUTgxc3NmQlhRcWY5UFViRG1SNFpJMDkyNG9xMFAwcHpucFRKekRtVjY5TVdUZkRZTlBuUVJETmxTa2Y3RmZmampYR0wxYjNVYUZGSGIwL1FqN0ppWXF6Y1VEVjFMa2h0dDczQTJIMVk1bUJCUTA0WXFRdytmZ2pHZkwrcVI1OEhLZHhZdFJvWkphaERMdGNaWT0uVTJGc2RHVmtYMS9vTktGU0owVlRQWHlqSGNDcytZNGJlMlFNNnBqbVlxU282NnllZ0E2U0xwcDJjWWEza2tCYTdycmVFYW5CRG5UMTNNN3pzVW5rdkhXOGJFbzRvQ0E4Umt5dmdmMlVaeDFCWFBOYnJYaExSUmpvUGpoT1lrLytEVjNZMEtlQWFKM2ZkVHBKZEI3czFnZXoybHpDLytoT3Q4Z3pObGxTSVNZVUlWNlVnN3dHNWtYeXlnTHhJSkFYS2FEVFQ0N3oyNCtybUkrUHJBN3hGa1ZLdjVHTmlxNGZRVTZJSUdkSzBkOEtmOWVnUzd4SW00d3JoN04vSTczcTQwSjlDTXZYMkd3Y0RZN242NmtPek02Zis0U29Hd3N4aFZaNmQ0YXV0WUxzK0o1VytWRzh3ZkVWcmErc2hGYzczTERSaHVMYnhRQlg1bmxIVGdkNlJtVGVRVkx0bmVhcld0Y1VpL0cydlJvMXVJeXlRVTR5czBDYUJFWjNtc1pTMWExSUozeDIzMy9MbFZaMzlEbjB4b3RzZTBKMUtOS1J3QkVLRTFpZFJpOGltYWhQQ3Y4WThnQXpqMXNYc2wxTHZ6d1EzZjBvZEx3dm1ZNit0NU5BaVV2My8renRCNGZLOGFoN2kvQW9GMWNvcXBFd1pVMDRPVUl3dmhUWHVBU2puSDNyRWw2VTFRdXVTZ2RyVTRoUTVxaE5nNXBHTzJFTVFqcjN4MFRuZEF2enJ6S1I4blJPQnZHb1ZkTVhlYUFkbVh2ZXBsL2NqRE52OUFPcjJVTkk5Wk9BYkFRL2g1VHBYeERWV3lBVDFqTXZRMWhsZmdSb0pGN1JMeHZmbUNJQWFuTHVJcTNFV3hDVXBicU5FbTdLaGtkWm9YSURPb3BGUExCaVhZWlZrNVpXcTFaMy81bGY2Yk4zd0czcXhBKzJpYnNUNEVUMGNwZjR5S0V3VW0zMmNnbEl6dTEzNUFZMmxnYnE0bWIwWVBMUVlRRlFCcTk1b01pT1RXMFdlY0dIenp4bFppSjlGc1ZFSFdudW9pNmFEdExnbGpzQmVsODdoM0YrYWZDUXd0NG9uUlp4WVpXSjd3bEVMQVA2c0pGVld5Yjcvd2ZUNTJnQXBLdUFpektoNjJEc1p6Y0llL2lOVlpnZHZOMGJ0ckp6TDFyWVJnYXNVU1p4M3BjK0YrbjVDaTE2OENoUnd2UkdPaWwzQWdGU2R1Qno2NEtYbW1xdlFscHA2ZFlhSkl0dlUraXAvUWNzNmYyS3lDcHRkRVUrbGxPejFCQmt2bVVZNW1RY2pWcVhvZE1CZ3k1MmMvUUVKREYxcHJuLzd6Y2M2dTgvdlliaGxmN21PWElDTGw0S21mVGp4L1Z0TmZpZVZFWDUyRUJCNk9MSUhzZ2E3cEM3THZkK3RxVHM1R1ZPS1dHdjVOUFpVMDUxODFwMWhsMHJSSnh0MzZMTWk5bnMyMngxdXlQd0FMYjByQ2V1aDJKWnJ4MEFOSTIwVlhFRHptdkdwTGo5UUd3Z2tmWjdWR2c3***END se-checksums.txt.enc BASE64 DUMP***
 ```
-Comparing both:
-```
-[root@zrhpgp11 vault-tutorial-onprem]# vim se-checksums.txt.enc.b64
-[root@zrhpgp11 vault-tutorial-onprem]# vim se-checksums.txt.enc
-[root@zrhpgp11 vault-tutorial-onprem]# base64 -d se-checksums.txt.enc.b64
-hyper-protect-basic.MJ2RWnFy5RG0n11fsu1OFAEaremxbTrLhLdoJ17ZWUDfQ9/QWW6okcnsPmw4bxXfCZ+FZgqo78DcdnWaktRMeGv22qd6SNS+e7ixeO0kjwN6gIULe+fFIx8D+qrUpgzH3yhARQc7hCr4K76Zn+HgmkGJNpC8verIEYPxgdwFmI6ZD7pDin6+I+RbM8Ref/DCcTuTK+RSpI5W6azHqxA5j8nmNOzBal1Qyd2VIWeAm7GZGR4IOk48h+HMhiTDqxhMZe+JK99AJDpK91y4J25sEvunlmAgeSby2OnMx6dh3o35beoNmaV4btbVZ7f3Mb266TsTn0bF3Vi6xXthYhzXkB0L2r6Edwpdf6C578+uo6UfKzOlNLL+3icq3RVC3aEbD0gTAHtEbu/6DwHfcb3Fw9C4xdKuDKD5ovRmjSiKuJaF7i1Zq2uYdtps/vNEldSvtse1gHAPD2H9t9QkfUgzKKbJli3rlZ3aMiOhDZq3nJN6HpmZ5t2uTUkvZLFNMN+2NeQkBhu4sV05Hto63GwOv0mHCWQ81ssfBXQqf9PUbDmR4ZI0924oq0P0pznpTJzDmV69MWTfDYNPnQRDNlSkf7FffjjXGL1b3UaFFHb0/Qj7JiYqzcUDV1Lkhtt73A2H1Y5mBBQ04YqQw+fgjGfL+qR58HKdxYtRoZJahDLtcZY=.U2FsdGVkX1/oNKFSJ0VTPXyjHcCs+Y4be2QM6pjmYqSo66yegA6SLpp2cYa3kkBa7rreEanBDnT13M7zsUnkvHW8bEo4oCA8Rkyvgf2UZx1BXPNbrXhLRRjoPjhOYk/+DV3Y0KeAaJ3fdTpJdB7s1gez2lzC/+hOt8gzNllSISYUIV6Ug7wG5kXyygLxIJAXKaDTT47z24+rmI+PrA7xFkVKv5GNiq4fQU6IIGdK0d8Kf9egS7xIm4wrh7N/I73q40J9CMvX2GwcDY7n66kOzM6f+4SoGwsxhVZ6d4autYLs+J5W+VG8wfEVra+shFc73LDRhuLbxQBX5nlHTgd6RmTeQVLtnearWtcUi/G2vRo1uIyyQU4ys0CaBEZ3msZS1a1IJ3x233/LlVZ39Dn0xotse0J1KNKRwBEKE1idRi8imahPCv8Y8gAzj1sXsl1LvzwQ3f0odLwvmY6+t5NAiUv3/+ztB4fK8ah7i/AoF1coqpEwZU04OUIwvhTXuASjnH3rEl6U1QuuSgdrU4hQ5qhNg5pGO2EMQjr3x0TndAvzrzKR8nROBvGoVdMXeaAdmXvepl/cjDNv9AOr2UNI9ZOAbAQ/h5TpXxDVWyAT1jMvQ1hlfgRoJF7RLxvfmCIAanLuIq3EWxCUpbqNEm7KhkdZoXIDOopFPLBiXYZVk5ZWq1Z3/5lf6bN3wG3qxA+2ibsT4ET0cpf4yKEwUm32cglIzu135AY2lgbq4mb0YPLQYQFQBq95oMiOTW0WecGHzzxlZiJ9FsVEHWnuoi6aDtLgljsBel87h3F+afCQwt4onRZxYZWJ7wlELAP6sJFVWyb7/wfT52gApKuAizKh62DsZzcIe/iNVZgdvN0btrJzL1rYRgasUSZx3pc+F+n5Ci168ChRwvRGOil3AgFSduBz64KXmmqvQlpp6dYaJItvU+ip/Qcs6f2KyCptdEU+llOz1BBkvmUY5mQcjVqXodMBgy52c/QEJDF1prn/7zcc6u8/vYbhlf7mOXICLl4KmfTjx/VtNfieVEX52EBB6OLIHsga7pC7Lvd+tqTs5GVOKWGv5NPZU05181p1hl0rRJxt36LMi9ns22x1uyPwALb0rCeuh2JZrx0ANI20VXEDzmvGpLj9QGwgkfZ7VGg7[root@zrhpgp11 vault-tutorial-onprem]# base64 -d se-checksums.txt.enc.b64 > se-checksums.txt.enc.2
-[root@zrhpgp11 vault-tutorial-onprem]# diff se-checksums.txt.enc se-checksums.txt.enc.
-se-checksums.txt.enc.2    se-checksums.txt.enc.b64  
-[root@zrhpgp11 vault-tutorial-onprem]# diff se-checksums.txt.enc se-checksums.txt.enc.
-se-checksums.txt.enc.2    se-checksums.txt.enc.b64  
-[root@zrhpgp11 vault-tutorial-onprem]# diff se-checksums.txt.enc se-checksums.txt.enc.2
-1c1
-< hyper-protect-basic.MJ2RWnFy5RG0n11fsu1OFAEaremxbTrLhLdoJ17ZWUDfQ9/QWW6okcnsPmw4bxXfCZ+FZgqo78DcdnWaktRMeGv22qd6SNS+e7ixeO0kjwN6gIULe+fFIx8D+qrUpgzH3yhARQc7hCr4K76Zn+HgmkGJNpC8verIEYPxgdwFmI6ZD7pDin6+I+RbM8Ref/DCcTuTK+RSpI5W6azHqxA5j8nmNOzBal1Qyd2VIWeAm7GZGR4IOk48h+HMhiTDqxhMZe+JK99AJDpK91y4J25sEvunlmAgeSby2OnMx6dh3o35beoNmaV4btbVZ7f3Mb266TsTn0bF3Vi6xXthYhzXkB0L2r6Edwpdf6C578+uo6UfKzOlNLL+3icq3RVC3aEbD0gTAHtEbu/6DwHfcb3Fw9C4xdKuDKD5ovRmjSiKuJaF7i1Zq2uYdtps/vNEldSvtse1gHAPD2H9t9QkfUgzKKbJli3rlZ3aMiOhDZq3nJN6HpmZ5t2uTUkvZLFNMN+2NeQkBhu4sV05Hto63GwOv0mHCWQ81ssfBXQqf9PUbDmR4ZI0924oq0P0pznpTJzDmV69MWTfDYNPnQRDNlSkf7FffjjXGL1b3UaFFHb0/Qj7JiYqzcUDV1Lkhtt73A2H1Y5mBBQ04YqQw+fgjGfL+qR58HKdxYtRoZJahDLtcZY=.U2FsdGVkX1/oNKFSJ0VTPXyjHcCs+Y4be2QM6pjmYqSo66yegA6SLpp2cYa3kkBa7rreEanBDnT13M7zsUnkvHW8bEo4oCA8Rkyvgf2UZx1BXPNbrXhLRRjoPjhOYk/+DV3Y0KeAaJ3fdTpJdB7s1gez2lzC/+hOt8gzNllSISYUIV6Ug7wG5kXyygLxIJAXKaDTT47z24+rmI+PrA7xFkVKv5GNiq4fQU6IIGdK0d8Kf9egS7xIm4wrh7N/I73q40J9CMvX2GwcDY7n66kOzM6f+4SoGwsxhVZ6d4autYLs+J5W+VG8wfEVra+shFc73LDRhuLbxQBX5nlHTgd6RmTeQVLtnearWtcUi/G2vRo1uIyyQU4ys0CaBEZ3msZS1a1IJ3x233/LlVZ39Dn0xotse0J1KNKRwBEKE1idRi8imahPCv8Y8gAzj1sXsl1LvzwQ3f0odLwvmY6+t5NAiUv3/+ztB4fK8ah7i/AoF1coqpEwZU04OUIwvhTXuASjnH3rEl6U1QuuSgdrU4hQ5qhNg5pGO2EMQjr3x0TndAvzrzKR8nROBvGoVdMXeaAdmXvepl/cjDNv9AOr2UNI9ZOAbAQ/h5TpXxDVWyAT1jMvQ1hlfgRoJF7RLxvfmCIAanLuIq3EWxCUpbqNEm7KhkdZoXIDOopFPLBiXYZVk5ZWq1Z3/5lf6bN3wG3qxA+2ibsT4ET0cpf4yKEwUm32cglIzu135AY2lgbq4mb0YPLQYQFQBq95oMiOTW0WecGHzzxlZiJ9FsVEHWnuoi6aDtLgljsBel87h3F+afCQwt4onRZxYZWJ7wlELAP6sJFVWyb7/wfT52gApKuAizKh62DsZzcIe/iNVZgdvN0btrJzL1rYRgasUSZx3pc+F+n5Ci168ChRwvRGOil3AgFSduBz64KXmmqvQlpp6dYaJItvU+ip/Qcs6f2KyCptdEU+llOz1BBkvmUY5mQcjVqXodMBgy52c/QEJDF1prn/7zcc6u8/vYbhlf7mOXICLl4KmfTjx/VtNfieVEX52EBB6OLIHsga7pC7Lvd+tqTs5GVOKWGv5NPZU05181p1hl0rRJxt36LMi9ns22x1uyPwALb0rCeuh2JZrx0ANI20VXEDzmvGpLj9QGwgkfZ7VGg7
----
-> hyper-protect-basic.MJ2RWnFy5RG0n11fsu1OFAEaremxbTrLhLdoJ17ZWUDfQ9/QWW6okcnsPmw4bxXfCZ+FZgqo78DcdnWaktRMeGv22qd6SNS+e7ixeO0kjwN6gIULe+fFIx8D+qrUpgzH3yhARQc7hCr4K76Zn+HgmkGJNpC8verIEYPxgdwFmI6ZD7pDin6+I+RbM8Ref/DCcTuTK+RSpI5W6azHqxA5j8nmNOzBal1Qyd2VIWeAm7GZGR4IOk48h+HMhiTDqxhMZe+JK99AJDpK91y4J25sEvunlmAgeSby2OnMx6dh3o35beoNmaV4btbVZ7f3Mb266TsTn0bF3Vi6xXthYhzXkB0L2r6Edwpdf6C578+uo6UfKzOlNLL+3icq3RVC3aEbD0gTAHtEbu/6DwHfcb3Fw9C4xdKuDKD5ovRmjSiKuJaF7i1Zq2uYdtps/vNEldSvtse1gHAPD2H9t9QkfUgzKKbJli3rlZ3aMiOhDZq3nJN6HpmZ5t2uTUkvZLFNMN+2NeQkBhu4sV05Hto63GwOv0mHCWQ81ssfBXQqf9PUbDmR4ZI0924oq0P0pznpTJzDmV69MWTfDYNPnQRDNlSkf7FffjjXGL1b3UaFFHb0/Qj7JiYqzcUDV1Lkhtt73A2H1Y5mBBQ04YqQw+fgjGfL+qR58HKdxYtRoZJahDLtcZY=.U2FsdGVkX1/oNKFSJ0VTPXyjHcCs+Y4be2QM6pjmYqSo66yegA6SLpp2cYa3kkBa7rreEanBDnT13M7zsUnkvHW8bEo4oCA8Rkyvgf2UZx1BXPNbrXhLRRjoPjhOYk/+DV3Y0KeAaJ3fdTpJdB7s1gez2lzC/+hOt8gzNllSISYUIV6Ug7wG5kXyygLxIJAXKaDTT47z24+rmI+PrA7xFkVKv5GNiq4fQU6IIGdK0d8Kf9egS7xIm4wrh7N/I73q40J9CMvX2GwcDY7n66kOzM6f+4SoGwsxhVZ6d4autYLs+J5W+VG8wfEVra+shFc73LDRhuLbxQBX5nlHTgd6RmTeQVLtnearWtcUi/G2vRo1uIyyQU4ys0CaBEZ3msZS1a1IJ3x233/LlVZ39Dn0xotse0J1KNKRwBEKE1idRi8imahPCv8Y8gAzj1sXsl1LvzwQ3f0odLwvmY6+t5NAiUv3/+ztB4fK8ah7i/AoF1coqpEwZU04OUIwvhTXuASjnH3rEl6U1QuuSgdrU4hQ5qhNg5pGO2EMQjr3x0TndAvzrzKR8nROBvGoVdMXeaAdmXvepl/cjDNv9AOr2UNI9ZOAbAQ/h5TpXxDVWyAT1jMvQ1hlfgRoJF7RLxvfmCIAanLuIq3EWxCUpbqNEm7KhkdZoXIDOopFPLBiXYZVk5ZWq1Z3/5lf6bN3wG3qxA+2ibsT4ET0cpf4yKEwUm32cglIzu135AY2lgbq4mb0YPLQYQFQBq95oMiOTW0WecGHzzxlZiJ9FsVEHWnuoi6aDtLgljsBel87h3F+afCQwt4onRZxYZWJ7wlELAP6sJFVWyb7/wfT52gApKuAizKh62DsZzcIe/iNVZgdvN0btrJzL1rYRgasUSZx3pc+F+n5Ci168ChRwvRGOil3AgFSduBz64KXmmqvQlpp6dYaJItvU+ip/Qcs6f2KyCptdEU+llOz1BBkvmUY5mQcjVqXodMBgy52c/QEJDF1prn/7zcc6u8/vYbhlf7mOXICLl4KmfTjx/VtNfieVEX52EBB6OLIHsga7pC7Lvd+tqTs5GVOKWGv5NPZU05181p1hl0rRJxt36LMi9ns22x1uyPwALb0rCeuh2JZrx0ANI20VXEDzmvGpLj9QGwgkfZ7VGg7
-\ No newline at end of file
-```
-Seems like the base64 produces a purer file as vim will place a new line char at the end of the file.
+### Decrypting the Attestation Data
+1. Save the above infomation `hyper-protect-basic.MJ2R...` as a file called `se-checksums.txt.enc`
 
-The documented `decrypt-attestation.sh` script:
-```
-#!/bin/bash
-#
-# Example script to decrypt attestation document.
-#
-# Usage:
-#   ./decrypt-attestation.sh <rsa-priv-key.pem> [file]
-#
-# Token Format:
-#   hyper-protect-basic.<ENC_AES_KEY_BASE64>.<ENC_MESSAGE_BASE64>
-
-
-RSA_PRIV_KEY="$1"
-if [ -z "$RSA_PRIV_KEY" ]; then
-    echo "Usage: $0 <rsa-priv-key.pem>"
-    exit 1
-fi
-INPUT_FILE="${2:-se-checksums.txt.enc}"
-TMP_DIR="$(mktemp -d)"
-#trap 'rm -r $TMP_DIR' EXIT
-
-
-PASSWORD_ENC="${TMP_DIR}/password_enc"
-MESSAGE_ENC="${TMP_DIR}/message_enc"
-
-
-# extract encrypted AES key and encrypted message
-cut -d. -f 2 "$INPUT_FILE"| base64 -d > "$PASSWORD_ENC"
-cut -d. -f 3 "$INPUT_FILE"| base64 -d > "$MESSAGE_ENC"
-
-# decrypt password
-PASSWORD=$(openssl pkeyutl -decrypt -inkey "$RSA_PRIV_KEY" -in "$PASSWORD_ENC")
-
-# decrypt message
-echo -n "$PASSWORD" | openssl aes-256-cbc -d -pbkdf2 -in "$MESSAGE_ENC" -pass stdin --out se-checksums.txt
-```
-Have moved `se-checksums.txt` to `gen-se-checksums.txt` and made alterations to `encrypt_contract.sh`
+2. Use the documented [`decrypt-attestation.sh`](HPVS-AttestationSignature-files/decrypt-attestation.sh) script to decrypt with private keyfile:
 ```
 [root@zrhpgp11 vault-tutorial-onprem]# ./decrypt-attestation.sh private_attestation.pem se-checksums.txt.enc
 Enter pass phrase for private_attestation.pem:
@@ -301,90 +126,16 @@ c98bb06ed4be07064d704918f5e220d0032805824d538fc061c2754686986660 cidata/user-dat
 dca72747c131d42f308c591c367a72b9613aa9d7f6988d04cb9f2bf661fe67e7 contract:env 
 f49b94c7fd898b74e2efda21b06cd8054926ebfe24a4f714b5fc1ef9b6136c74 contract:attestationPublicKey 
 8b58c2a43d62f44b4362a88a37729bf8fbe32f890b8bad84113f98cd01c2861d contract:workload 
-[root@zrhpgp11 vault-tutorial-onprem]# ./decrypt-attestation.sh private_attestation.pem se-checksums.txt.enc.2
-Enter pass phrase for private_attestation.pem:
-[root@zrhpgp11 vault-tutorial-onprem]# cat se-checksums.txt
-24.11.0
-Machine Type/Plant/Serial: 3931/02/8A3B8
-Image age: 124 days since creation.
-ad65a3820d4a233c84e6d201ce537b8020435ccefe26682809da5ef9b176b8ae root.tar.gz
-080f817231fe4bc40021d24e20af9f1135a36711047212f9374664b86ab406ac baseimage
-8014fee239f8ece9fa197b0b83028e1de9397f4ab2e6be1fb721ad9f18c80145 /dev/disk/by-label/cidata
-c7337f60d493b4b146c27ad1213b4b6fd35bb88c9905869002b47fbae16f4e52 cidata/meta-data
-c98bb06ed4be07064d704918f5e220d0032805824d538fc061c2754686986660 cidata/user-data
-13891bfb004315f8fd84d1b3d06833fe251f7749010e1c14833522bd57a950c4 cidata/vendor-data
-dca72747c131d42f308c591c367a72b9613aa9d7f6988d04cb9f2bf661fe67e7 contract:env 
-f49b94c7fd898b74e2efda21b06cd8054926ebfe24a4f714b5fc1ef9b6136c74 contract:attestationPublicKey 
-8b58c2a43d62f44b4362a88a37729bf8fbe32f890b8bad84113f98cd01c2861d contract:workload 
-```
-BASE64 vs CAT - makes no difference, the newline is treated in this process.
-```
-[root@zrhpgp11 vault-tutorial-onprem]# cat se-checksums.txt
-24.11.0
-Machine Type/Plant/Serial: 3931/02/8A3B8
-Image age: 124 days since creation.
-ad65a3820d4a233c84e6d201ce537b8020435ccefe26682809da5ef9b176b8ae root.tar.gz
-080f817231fe4bc40021d24e20af9f1135a36711047212f9374664b86ab406ac baseimage
-8014fee239f8ece9fa197b0b83028e1de9397f4ab2e6be1fb721ad9f18c80145 /dev/disk/by-label/cidata
-c7337f60d493b4b146c27ad1213b4b6fd35bb88c9905869002b47fbae16f4e52 cidata/meta-data
-c98bb06ed4be07064d704918f5e220d0032805824d538fc061c2754686986660 cidata/user-data
-13891bfb004315f8fd84d1b3d06833fe251f7749010e1c14833522bd57a950c4 cidata/vendor-data
-dca72747c131d42f308c591c367a72b9613aa9d7f6988d04cb9f2bf661fe67e7 contract:env 
-f49b94c7fd898b74e2efda21b06cd8054926ebfe24a4f714b5fc1ef9b6136c74 contract:attestationPublicKey 
-8b58c2a43d62f44b4362a88a37729bf8fbe32f890b8bad84113f98cd01c2861d contract:workload 
-[root@zrhpgp11 vault-tutorial-onprem]# cat gen-se-checksums.txt 
-8b58c2a43d62f44b4362a88a37729bf8fbe32f890b8bad84113f98cd01c2861d  - contract:workload
-dca72747c131d42f308c591c367a72b9613aa9d7f6988d04cb9f2bf661fe67e7  - contract:env
-f49b94c7fd898b74e2efda21b06cd8054926ebfe24a4f714b5fc1ef9b6136c74  - contract:attestationPublicKey
 ```
 We have matching attestation records!
 
-Also **NOTE THAT** there should and needs to be separation of duties [here](https://github.ibm.com/ZaaS/zcat-assets/issues/325#issuecomment-107907808):
+Also **NOTE THAT** there should and needs to be separation of duties:
 Part 1 - the creation of key pair must be done by the **AUDITOR**, for reasons discussed above
 Part 2 - **MUST** be done in separate steps, that is:
-- Workload owner does the workload section encryption:
-```
-#!/bin/bash
-
-CONTRACT_KEY="/data/hpcr/config/certs/ibm-hyper-protect-container-runtime-24.11.0-encrypt.crt"
-WORKLOAD="./workload.yml"
-PASSWORD="$(openssl rand 32 | base64 -w0)"
-ENCRYPTED_PASSWORD="$(echo -n "$PASSWORD" | base64 -d | openssl rsautl -encrypt -inkey $CONTRACT_KEY -certin | base64 -w0 )"
-ENCRYPTED_WORKLOAD="$(echo -n "$PASSWORD" | base64 -d | openssl enc -aes-256-cbc -pbkdf2 -pass stdin -in "$WORKLOAD" | base64 -w0)"
-echo "workload: \"hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_WORKLOAD}\"" > user-data
-# For attestation of the workload section 
-echo "`echo "hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_WORKLOAD}" | tr -d "\n\r" | sha256sum` contract:workload" > gen-se-checksums.txt
-```
-And provides the value to the ADMIN: `workload: "hyper-protect-basic.tc/xVkDUY9bzvjsBlRok/o9ZbJEXuX9ZdqXwHe5tXKOWRzl0nnZWw3jOeAQSXCvdeN1bfWD8A1QeNJf+SqiRsWNatk3c1BoGjqK5mqrf+BkUARtvH4JkDTrr59STCOXnWlr4O6/61bA1DUgKjFHh9..."`
+- Workload owner does the workload section encryption and provides the value to the ADMIN: `workload: "hyper-protect-basic.tc/xVkDUY9bzvjsBlRok/o9ZbJEXuX9ZdqXwHe5tXKOWRzl0nnZWw3jOeAQSXCvdeN1bfWD8A1QeNJf+SqiRsWNatk3c1BoGjqK5mqrf+BkUARtvH4JkDTrr59STCOXnWlr4O6/61bA1DUgKjFHh9..."`
 And provides the checksum to the AUDITOR: `8b58c2a43d62f44b4362a88a37729bf8fbe32f890b8bad84113f98cd01c2861d  - contract:workload`
-- Env owner (ADMIN) does the env section encryption:
-```
-#!/bin/bash
-
-CONTRACT_KEY="/data/hpcr/config/certs/ibm-hyper-protect-container-runtime-24.11.0-encrypt.crt"
-ENV="./env-syslog.yml"
-PASSWORD="$(openssl rand 32 | base64 -w0)"
-ENCRYPTED_PASSWORD="$(echo -n "$PASSWORD" | base64 -d | openssl rsautl -encrypt -inkey $CONTRACT_KEY  -certin | base64 -w0)"
-ENCRYPTED_ENV="$(echo -n "$PASSWORD" | base64 -d | openssl enc -aes-256-cbc -pbkdf2 -pass stdin -in "$ENV" | base64 -w0)"
-echo "env: \"hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_ENV}\"" >> user-data
-# For attestation of the env section
-echo "`echo "hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_ENV}" | tr -d "\n\r" | sha256sum` contract:env" >> gen-se-checksums.txt
-```
-And provides the checksum to the AUDITOR: `dca72747c131d42f308c591c367a72b9613aa9d7f6988d04cb9f2bf661fe67e7  - contract:env`
-- Lastly, the AUDITOR encrypts the public key:
-```
-#!/bin/bash
-
-CONTRACT_KEY="/data/hpcr/config/certs/ibm-hyper-protect-container-runtime-24.11.0-encrypt.crt"
-ATTESTATION="./public_attestation.pem"
-PASSWORD="$(openssl rand 32 | base64 -w0)"
-ENCRYPTED_PASSWORD="$(echo -n "$PASSWORD" | base64 -d | openssl rsautl -encrypt -inkey $CONTRACT_KEY  -certin | base64 -w0)"
-ENCRYPTED_ATTESTATION="$(echo -n "$PASSWORD" | base64 -d | openssl enc -aes-256-cbc -pbkdf2 -pass stdin -in "$ATTESTATION" | base64 -w0)"
-echo "attestationPublicKey: \"hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_ATTESTATION}\"" >> user-data
-# For attestation of the Attestation section
-echo "`echo "hyper-protect-basic.${ENCRYPTED_PASSWORD}.${ENCRYPTED_ATTESTATION}" | tr -d "\n\r" | sha256sum` contract:attestationPublicKey" >> gen-se-checksums.txt
-```
-And gives the value to the ADMIN to be placed  into the `attestationPublicKey: "hyper-protect-basic.GAmsw4oFY1LizjqcwvzrK4gzy1GbnUd+EU1w+S2..."`
+- Env owner (ADMIN) does the env section encryption and provides the checksum to the AUDITOR: `dca72747c131d42f308c591c367a72b9613aa9d7f6988d04cb9f2bf661fe67e7  - contract:env`
+- Lastly, the AUDITOR encrypts the public key and gives the value to the ADMIN to be placed  into the `attestationPublicKey: "hyper-protect-basic.GAmsw4oFY1LizjqcwvzrK4gzy1GbnUd+EU1w+S2..."`
 
 ## Contract Signature
 The contract signature is another option anti-tampering method described/documented [here](https://www.ibm.com/docs/en/hpvs/2.2.x?topic=servers-about-contract#hpcr_contract_sign).
