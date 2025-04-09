@@ -41,7 +41,7 @@ You must mount the internal attestation directory:
          path: /var/hyperprotect
          type: Directory 
 ```
-You can view the full contract template here: 
+You can view the full contract template used for the workload here: [workload.yaml](HPVS-AttestationSignature-files/workload.yaml)
 
 
 ### Accessing the Attestation data
