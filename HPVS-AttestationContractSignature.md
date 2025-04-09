@@ -216,10 +216,6 @@ All paterns match!
 ### 5. Testing with WRONG Signature
 Altering a character on the `signingKey` component on the environment section of the contract simulates someone trying to deploy a worklaod with the wrong signature, this results in the following error when the machine comes up:
 ```
-[root@zrhpgp11 vault-tutorial-onprem]# virsh start vault-tutorial-onprem --console 
-Domain 'vault-tutorial-onprem' started
-Connected to domain 'vault-tutorial-onprem'
-Escape character is ^] (Ctrl + ])
 # HPL11 build:24.11.0 enabler:24.11.0
 # Tue Mar 25 12:21:15 UTC 2025
 # Machine Type/Plant/Serial: 3931/02/8A3B8
