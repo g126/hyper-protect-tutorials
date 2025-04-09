@@ -5,6 +5,10 @@ The purpuse of this tutorial is to provide a better understanding of the Hyper P
 - [Attestation](https://github.ibm.com/ZaaS/zcat-assets/blob/main/tutorials/HPVS-AttestationContractSignature.md#attestation)
 - [Contract Signature](https://github.ibm.com/ZaaS/zcat-assets/blob/main/tutorials/HPVS-AttestationContractSignature.md#contract-signature)
 
+The following are pre-requisites:
+ - Working HPVS contract that deploys a workload, we'll be using the one developed in the [link to Vault tutorial]
+ - It's assumed the contract is encrypted following the procedures in the [official documentation](https://www.ibm.com/docs/en/hpvs/2.2.x?topic=servers-about-contract#hpcr_contract_encrypt)
+
 ## Attestation
 The topic of attestation for on-prem servers is documented [here](https://www.ibm.com/docs/en/hpvs/2.2.x?topic=servers-attestation).
 
@@ -22,6 +26,32 @@ The KEY take away here is that the role responsible for doing this is the AUDITO
 A MALICIOUS admin could quite easily find out what the correct SHA256SUM of the workload, env and other sections of the contract (also referred to as the cloud initialization options) as they have access to the contract being the role responsible to deployment. HOWEVER, they have access to an encrypted contract that can ONLY be decrypted by HPCR an the public key that HPCR will use to encrypt the attestation information is present in the `attestationPublicKey:` part of the contract. When this is encrypted the ADMIN can not know what it contains. If this section is not present or not encrypted a malicious admin could redeploy a different application that looks the same and provides the expected attestation information, which has in fact been faked at the information level.
 
 Let's now see how attestation works in practice.
+
+### Changes in the contract
+You must mount the internal attestation directory:
+```
+ volumeMounts:
+     - name: attestation
+       readOnly: true
+       mountPath: /var/hyperprotect:Z,U
+...
+ volumes:
+     - name: attestation
+       hostPath:
+         path: /var/hyperprotect
+         type: Directory 
+```
+You can view the full contract template here: 
+
+
+### Accessing the Attestation data
+You workload must make this available to you either by webserver/API or dump it in the logs so that it can be retrived at boot. In this case we chose dumping it the logs as the workload does not have a native webserver, so the following line was included in the script that runs the workload:
+```
+cat /var/hyperprotect/se-checksums.txt
+```
+
+You can view the full script here [link to script]
+
 
 Following up on some work that has already been done on this on **How to run IBM Vault in a Confidential Computing enclave**
 
