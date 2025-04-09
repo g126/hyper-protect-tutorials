@@ -181,7 +181,7 @@ volumes:
     seed: "testing"
 signingKey: LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQ0lqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FnOEFNSUlDQ2dLQ0FnRUEwT00zNFREUFY0VnhQTFJEN2t4SwpMeGNnQkpIWDhyakprb1J3aUNiVU16ZnNPVnBLM0xybEQxc2hxRzJlTkxTUEhpc3ZNRUNranU2cTRVand6NjdxClhmaTVUdEFzUzJpOGFBa0g5cUt0L290MXJCQWVtWUl4Y3I1LysyaEkwb2dNRm9SZWJDSTlWakd2bDJyc3lUWkYKUDJ4eGw4RE0rRVhneXJLV3VJTWtXZ3pKR0JibUVvR2pVMmNqRXpEWHdwbXpZcDF1WHQxcmluVkhxd2NPSWtZSQpTZGZZMXhRUFlhcEhvSldvRjZZWVF3L2hYTE50ODYxUjMycFpHbFZkNmxYRVJWZEhVclNRYVpFemY3dU1WM1lFClF0QmNXTUhJUjAyZ0wwRjg1WHVtQlkvNkc4MzErRzZ1TjBwRkZNb0RQS3BrZ0hLQU1xU2pLUk02aXBHVmxaRjMKZ2xCZlZvL21wL2lOTm1YQzJjMWhaN04zUlNneHVjK3hoVkZ0eSs3ZERGMGJtVDRhVllGT3ZNWVI2WmU1YnliVAp6SFpaNTNZTmtQRUthQ2JQL0RGYmh6SFU0dzQ3WmorbWlhbG51bFlQVTRyTmpHV2M3L0IzcFpmelFCK1UrVEg2CnBpODVQT2xQT2ZKUUZzdHI4cm5YUHUwQmVtRWFmMlVwNFh5MTRWTW5VZUNKTVpwRkVGMHVrYXhWQzIxdkNZeFMKUUREQnB4VUZMVnd0b2N5K2lKNkhya25OejJwZ09Tck11UTBHWDV0RTdrczV0SThna3QzcENZbjJNZlgvQmh2KwpnZEo2bDVFK0hlY3pueEY5RDJZNXZKRENZWkpEaFl0N3dsTmF0MGJaZXMyMFRNZnlrdytTNzBkWVdGUzhFZnhnCi9uVEFGemhiVGJTTmUzcWhWbE5mKzlFQ0F3RUFBUT09Ci0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLQo=
 ```
-### 4. Modified `encrypt_contract_att.sh` to [encrypt_contract_att_sign.sh](HPVS-AttestationSignature-files/encrypt_contract_att_sign.sh), here I'm saving the checksum at contract creation time to `gen-se-checksums.txt`:
+### 4. Modified `encrypt_contract_att.sh` to [encrypt_contract_att_sign.sh](HPVS-AttestationSignature-files/encrypt_contract_att_sign.sh), to add the signature to the contract (here I'm saving the checksum at contract creation time to `gen-se-checksums.txt`). The signature consists of both the encrypted workload and env section signed by the private key/certificate:
 Logging looks good and has:
 ```
 Mar 25 08:44:29 zrhpkoso zcatvault-zcatvault[854262]: ***BEGIN se-checksums.txt.enc CAT DUMP***
@@ -253,10 +253,10 @@ Mar 25 08:21:37 zrhpkoso hpcr-contract[854262]: Validation of Contract failed.
 Mar 25 08:21:37 zrhpkoso hpcr-contract[854262]: HPL05001E: Unable to validate the contract semantically. -> jsonschema: '/envWorkloadSignature' does not validate with file:///schema.json#/allOf/6/properties/envWorkloadSignature/$ref/pattern: does not match pattern '^(?:[A-Za-z\\d+/]{4}\\s*)*(?:[A-Za-z\\d+/]{3}=|[A-Za-z\\d+/]{2}==)?$'
 Mar 25 08:21:37 zrhpkoso hpcr-contract[854262]: Validation Error: {}
 ```
-
+We can therefore see in action how HPVS will protect the the workload by deploying it only when it matches the signature.
 # Conclusion
 Now have a better understanding of the HPVS anti tamper mechanisms:
 - Attestation: for the AUDITOR to audit the system and make sure all components are what they say they are, must keep their PUBLIC and Private keys a secret (especially the public keys)
-- Contract Signature: a way for a contract signer (presumably the workload owner) to sign the contract so that only workload can't be tampered with, if the signature doesn't match then HPVS will not deploy the workload (assumes it has been compromised)
+- Contract Signature: a way for a contract signer (presumably the workload owner) to sign the contract so that the workload can't be tampered with, if the signature doesn't match then HPVS will not deploy the workload (assumes it has been compromised)
 
 It is worth noting that neither process will necessarily stop the deployment of a compromised imaged at source. If some malicious actor has managed to push an image with the SAME SHA256SUM to the registry then it will be deployed as it's passed the checksum test. The only way to protect against that is to use a secure build method and sign the images digitally.
