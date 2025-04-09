@@ -15,7 +15,7 @@ On HPVS attestation is a way to see and verify the SHA256SUM of all the componen
 - The cloud initialization options
 
 The flow of attestation is exemplified in this VERY complicated diagram:
-![image]([https://github.ibm.com/ZaaS/zcat-assets/assets/193393/d7a4348f-a26a-4070-bb8f-3d8505e7da0c](https://www.ibm.com/docs/en/SSHPMH_2.2.x/images/vsi_se_attestationrecord.png))
+![image](https://www.ibm.com/docs/en/SSHPMH_2.2.x/images/vsi_se_attestationrecord.png)
 
 The KEY take away here is that the role responsible for doing this is the AUDITOR, henceforth this is the ONLY role in a zero trust system that should have access to the private and public key pair capable of encrypting and decrypting the attestation information.
 
