@@ -45,7 +45,7 @@ You can view the full contract template used for the workload here: [workload.ya
 
 
 ### Accessing the Attestation data
-You workload must make this available to you either by webserver/API or dump it in the logs so that it can be retrived at boot. In this case we chose dumping it the logs as the workload does not have a native webserver, so the following line was included in the script that runs the workload:
+You workload must make this available to you either by webserver/API or dump it in the logs so that it can be retrieved at boot. In this case we chose dumping it the logs as the workload does not have a native webserver, so the following line was included in the script that runs the workload:
 ```
 cat /var/hyperprotect/se-checksums.txt
 ```
@@ -82,7 +82,7 @@ Mar 24 10:52:29 zrhpkoso zcatvault-zcatvault[854262]: ef192311e1c19512774498ef5d
 The attestation matches and we now know the contract on the system is what we encrypted... 
 
 ### Encrypting the Attestation Records
-However as discussed above the open records can be 'faked' so we'll now assume the role of the auditor and encrypt the attestation record. Note that since we're using encrypted records we need to change the workload script to output the `se-checksums.txt.enc` to the logs. To make it easier to identify I've also included the tag `***BEGIN se-checksums.txt.enc CAT DUMP***` to be outputed just before the encrypted output and a corresponding one after.
+However as discussed above the open records can be 'faked' so we'll now assume the role of the auditor and encrypt the attestation record. Note that since we're using encrypted records we need to change the workload script to output the `se-checksums.txt.enc` to the logs. To make it easier to identify I've also included the tag `***BEGIN se-checksums.txt.enc CAT DUMP***` to be outputted just before the encrypted output and a corresponding one after.
 
 1. Creating RSA key pair:
 ```
@@ -94,7 +94,7 @@ e is 65537 (0x010001)
 [root@zrhpgp11 vault-tutorial-onprem]# openssl rsa -in private_attestation.pem -passin pass:zcatattestation -pubout -out public_attestation.pem
 writing RSA key
 ```
-2. Modify `encrypt_contract.sh` to [`encrypt_contract_att.sh`](HPVS-AttestationSignature-files/encrypt_contract_att.sh) (click to view) to include the attestation key in the contract, this now results in the followig `se-checksums.txt`:
+2. Modify `encrypt_contract.sh` to [`encrypt_contract_att.sh`](HPVS-AttestationSignature-files/encrypt_contract_att.sh) (click to view) to include the attestation key in the contract, this now results in the following `se-checksums.txt`:
 ``` 
 8b58c2a43d62f44b4362a88a37729bf8fbe32f890b8bad84113f98cd01c2861d  - contract:workload
 dca72747c131d42f308c591c367a72b9613aa9d7f6988d04cb9f2bf661fe67e7  - contract:env
@@ -107,9 +107,9 @@ Mar 25 05:56:45 zrhpkoso zcatvault-zcatvault[854262]: ***BEGIN se-checksums.txt.
 Mar 25 05:56:45 zrhpkoso zcatvault-zcatvault[854262]: hyper-protect-basic.MJ2RWnFy5RG0n11fsu1OFAEaremxbTrLhLdoJ17ZWUDfQ9/QWW6okcnsPmw4bxXfCZ+FZgqo78DcdnWaktRMeGv22qd6SNS+e7ixeO0kjwN6gIULe+fFIx8D+qrUpgzH3yhARQc7hCr4K76Zn+HgmkGJNpC8verIEYPxgdwFmI6ZD7pDin6+I+RbM8Ref/DCcTuTK+RSpI5W6azHqxA5j8nmNOzBal1Qyd2VIWeAm7GZGR4IOk48h+HMhiTDqxhMZe+JK99AJDpK91y4J25sEvunlmAgeSby2OnMx6dh3o35beoNmaV4btbVZ7f3Mb266TsTn0bF3Vi6xXthYhzXkB0L2r6Edwpdf6C578+uo6UfKzOlNLL+3icq3RVC3aEbD0gTAHtEbu/6DwHfcb3Fw9C4xdKuDKD5ovRmjSiKuJaF7i1Zq2uYdtps/vNEldSvtse1gHAPD2H9t9QkfUgzKKbJli3rlZ3aMiOhDZq3nJN6HpmZ5t2uTUkvZLFNMN+2NeQkBhu4sV05Hto63GwOv0mHCWQ81ssfBXQqf9PUbDmR4ZI0924oq0P0pznpTJzDmV69MWTfDYNPnQRDNlSkf7FffjjXGL1b3UaFFHb0/Qj7JiYqzcUDV1Lkhtt73A2H1Y5mBBQ04YqQw+fgjGfL+qR58HKdxYtRoZJahDLtcZY=.U2FsdGVkX1/oNKFSJ0VTPXyjHcCs+Y4be2QM6pjmYqSo66yegA6SLpp2cYa3kkBa7rreEanBDnT13M7zsUnkvHW8bEo4oCA8Rkyvgf2UZx1BXPNbrXhLRRjoPjhOYk/+DV3Y0KeAaJ3fdTpJdB7s1gez2lzC/+hOt8gzNllSISYUIV6Ug7wG5kXyygLxIJAXKaDTT47z24+rmI+PrA7xFkVKv5GNiq4fQU6IIGdK0d8Kf9egS7xIm4wrh7N/I73q40J9CMvX2GwcDY7n66kOzM6f+4SoGwsxhVZ6d4autYLs+J5W+VG8wfEVra+shFc73LDRhuLbxQBX5nlHTgd6RmTeQVLtnearWtcUi/G2vRo1uIyyQU4ys0CaBEZ3msZS1a1IJ3x233/LlVZ39Dn0xotse0J1KNKRwBEKE1idRi8imahPCv8Y8gAzj1sXsl1LvzwQ3f0odLwvmY6+t5NAiUv3/+ztB4fK8ah7i/AoF1coqpEwZU04OUIwvhTXuASjnH3rEl6U1QuuSgdrU4hQ5qhNg5pGO2EMQjr3x0TndAvzrzKR8nROBvGoVdMXeaAdmXvepl/cjDNv9AOr2UNI9ZOAbAQ/h5TpXxDVWyAT1jMvQ1hlfgRoJF7RLxvfmCIAanLuIq3EWxCUpbqNEm7KhkdZoXIDOopFPLBiXYZVk5ZWq1Z3/5lf6bN3wG3qxA+2ibsT4ET0cpf4yKEwUm32cglIzu135AY2lgbq4mb0YPLQYQFQBq95oMiOTW0WecGHzzxlZiJ9FsVEHWnuoi6aDtLgljsBel87h3F+afCQwt4onRZxYZWJ7wlELAP6sJFVWyb7/wfT52gApKuAizKh62DsZzcIe/iNVZgdvN0btrJzL1rYRgasUSZx3pc+F+n5Ci168ChRwvRGOil3AgFSduBz64KXmmqvQlpp6dYaJItvU+ip/Qcs6f2KyCptdEU+llOz1BBkvmUY5mQcjVqXodMBgy52c/QEJDF1prn/7zcc6u8/vYbhlf7mOXICLl4KmfTjx/VtNfieVEX52EBB6OLIHsga7pC7Lvd+tqTs5GVOKWGv5NPZU05181p1hl0rRJxt36LMi9ns22x1uyPwALb0rCeuh2JZrx0ANI20VXEDzmvGpLj9QGwgkfZ7VGg7***END se-checksums.txt.enc CAT DUMP***
 ```
 ### Decrypting the Attestation Data
-1. Save the above infomation `hyper-protect-basic.MJ2R...` as a file called `se-checksums.txt.enc`
+1. Save the above information `hyper-protect-basic.MJ2R...` as a file called `se-checksums.txt.enc`
 
-2. Use the documented [`decrypt-attestation.sh`](HPVS-AttestationSignature-files/decrypt-attestation.sh) script to decrypt with private keyfile (note that this script will overwrite the `se-checksums.txt` generated by the encrypt_contract.sh script, this can easily be solved by changing the outupt file in either script to a different name):
+2. Use the documented [`decrypt-attestation.sh`](HPVS-AttestationSignature-files/decrypt-attestation.sh) script to decrypt with private keyfile (note that this script will overwrite the `se-checksums.txt` generated by the encrypt_contract.sh script, this can easily be solved by changing the output file in either script to a different name):
 ```
 [root@zrhpgp11 vault-tutorial-onprem]# ./decrypt-attestation.sh private_attestation.pem se-checksums.txt.enc
 Enter pass phrase for private_attestation.pem:
@@ -144,7 +144,7 @@ In this method the workload owner (or the auditor) has access the unique ability
 
 It's recommended that the workload owner be the one that provides this signature as this allows them to protect the workload and make sure it's the correct workload that is deployed.
 
-Technically, unless the malicious actor has access to the private key and can provide a valid signature, it is impossible for anyone else to tamper with the workload, as teh signature would not be valid and HPCR would not deploy the workload.
+Technically, unless the malicious actor has access to the private key and can provide a valid signature, it is impossible for anyone else to tamper with the workload, as the signature would not be valid and HPCR would not deploy the workload.
 
 The process should be:
 1. Contract signer (possibly workload owner) generates key or certificate pairs
@@ -211,10 +211,10 @@ dcc2ca7f5b8590e69524ef63e8ddbb3c1770dabf40525950c3171ae2d059ff70  - contract:wor
 5b9587234163bbbfbb14f5e7aad77f6f864f33e52fe43b834afd04f969ae3329  - contract:attestationPublicKey
 e236791035292b8b3c4bf8507a6faa587c64a4dd7e1503064b1c6fd462edce7f  - contract:envWorkloadSignature
 ```
-All paterns match!
+All patterns match!
 
 ### 5. Testing with WRONG Signature
-Altering a character on the `signingKey` component on the environment section of the contract simulates someone trying to deploy a worklaod with the wrong signature, this results in the following error when the machine comes up:
+Altering a character on the `signingKey` component on the environment section of the contract simulates someone trying to deploy a workload with the wrong signature, this results in the following error when the machine comes up:
 ```
 # HPL11 build:24.11.0 enabler:24.11.0
 # Tue Mar 25 12:21:15 UTC 2025
